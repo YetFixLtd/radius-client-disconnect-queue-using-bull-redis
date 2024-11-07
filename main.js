@@ -1,22 +1,28 @@
 const dotenv = require("dotenv");
 
 const express = require("express");
+const { body, validationResult } = require("express-validator");
+
 const Queue = require("bull");
 const { ExpressAdapter } = require("@bull-board/express");
 const { createBullBoard } = require("@bull-board/api");
 const { BullAdapter } = require("@bull-board/api/bullAdapter");
+
 const jobProcess = require("./disconnectProcess");
 
 dotenv.config();
 
 const app = express();
+app.use(express.json());
 
-const PORT = parseInt(process.env.PORT);
-const CONCURRENT_LIMIT = parseInt(process.env.CONCURRENT_LIMIT);
-const ATTEMPTS = parseInt(process.env.ATTEMPTS);
+const PORT = parseInt(process.env.PORT, 10);
+const CONCURRENT_LIMIT = parseInt(process.env.CONCURRENT_LIMIT, 10);
+const ATTEMPTS = parseInt(process.env.ATTEMPTS, 10);
+const REDIS_HOST = process.env.REDIS_HOST;
+const REDIS_PORT = parseInt(process.env.REDIS_PORT, 10);
 
 const dataQueue = new Queue("disconnect-radius-client", {
-  redis: { port: 6379, host: "127.0.0.1" },
+  redis: { port: REDIS_PORT, host: REDIS_HOST },
 });
 
 app.use(express.json());
@@ -31,19 +37,33 @@ createBullBoard({
 
 app.use("/admin/queues", serverAdapter.getRouter());
 
-app.post("/add-job", async (req, res) => {
-  const { data } = req.body;
+const validationArr = [
+  body("username").notEmpty().withMessage("Username is required"),
+  body("username").isString().withMessage("Username must be a string"),
+
+  body("ip").notEmpty().withMessage("IP address is required"),
+  body("ip").isIP().withMessage("Invalid IP address format"),
+
+  body("secret").notEmpty().withMessage("Secret is required"),
+  body("secret").isString().withMessage("Secret must be a string"),
+];
+
+app.post("/add-disconnect-job", validationArr, async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const data = req.body;
+  console.log(data);
 
   try {
-    await dataQueue.add(
-      { data },
-      {
-        attempts: ATTEMPTS,
-        backoff: {
-          type: "exponential",
-        },
-      }
-    );
+    await dataQueue.add(data, {
+      attempts: ATTEMPTS,
+      backoff: {
+        type: "exponential",
+      },
+    });
     res.status(200).send("Job added to the queue");
   } catch (err) {
     res.status(500).send("Error adding job to the queue");
