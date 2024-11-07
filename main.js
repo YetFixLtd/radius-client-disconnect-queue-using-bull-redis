@@ -46,6 +46,7 @@ const validationArr = [
 
   body("secret").notEmpty().withMessage("Secret is required"),
   body("secret").isString().withMessage("Secret must be a string"),
+  body("isOnline").isBoolean().withMessage("isOnline must be a boolean."),
 ];
 
 app.post("/add-disconnect-job", validationArr, async (req, res) => {
@@ -55,7 +56,6 @@ app.post("/add-disconnect-job", validationArr, async (req, res) => {
   }
 
   const data = req.body;
-  console.log(data);
 
   try {
     await dataQueue.add(data, {
@@ -63,6 +63,7 @@ app.post("/add-disconnect-job", validationArr, async (req, res) => {
       backoff: {
         type: "exponential",
       },
+      priority: data.isOnline ? 1 : 3,
     });
     res.status(200).send("Job added to the queue");
   } catch (err) {
